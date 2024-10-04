@@ -1,8 +1,7 @@
 name: Build Wheels for PyPI
 on:
   workflow_dispatch:
-  push:
-    # tags: ["yosys-*"]
+
 jobs:
   build_wheels:
     strategy:
@@ -37,12 +36,15 @@ jobs:
               runner: "macos-14",
               archs: "arm64",
             },
-            {
-              name: "Windows Server 2019",
-              family: "windows",
-              runner: "windows-2019",
-              archs: "AMD64",
-            },
+						## Windows is disabled because of an issue with compiling FFI as
+            ## under MinGW in the GitHub Actions environment (SHELL variable has
+            ## whitespace.)
+            # {
+            #   name: "Windows Server 2019",
+            #   family: "windows",
+            #   runner: "windows-2019",
+            #   archs: "AMD64",
+            # },
           ]
     name: Build Wheels | ${{ matrix.os.name }} | ${{ matrix.os.archs }}
     runs-on: ${{ matrix.os.runner }}
@@ -73,7 +75,7 @@ jobs:
           brew install flex bison
           echo "PATH=$(brew --prefix flex)/bin:$PATH" >> $GITHUB_ENV
           echo "PATH=$(brew --prefix bison)/bin:$PATH" >> $GITHUB_ENV
-      - if : ${{ matrix.os.family == 'windows' }}
+      - if: ${{ matrix.os.family == 'windows' }}
         name: "[Windows] Flex/Bison"
         run: |
           choco install winflexbison3
@@ -86,7 +88,7 @@ jobs:
         uses: pypa/cibuildwheel@v2.21.1
         env:
           # * APIs not supported by PyPy
-          # * Musllinux temporarily disabled because it takes too much time
+          # * Musllinux disabled because it increases build time from 48m to ~3h
           CIBW_SKIP: >
             pp*
             *musllinux*
@@ -111,4 +113,19 @@ jobs:
           CIBW_TEST_COMMAND: python3 -c "from pyosys import libyosys as ys;d=ys.Design();ys.run_pass('help', d)"
       - uses: actions/upload-artifact@v3
         with:
+          name: python-wheels
           path: ./wheelhouse/*.whl
+  upload_wheels:
+    name: Upload Wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: python-wheels
+          path: "."
+      - run: mv ./artifact/* ./dist
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          repository-url: ${{ vars.PYPI_INDEX || 'https://pypi.org/' }}
